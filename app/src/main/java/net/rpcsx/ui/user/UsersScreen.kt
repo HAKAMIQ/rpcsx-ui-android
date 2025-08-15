@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -74,19 +73,14 @@ private fun UserRow(
 fun UsersScreen(
     navigateBack: () -> Unit
 ) {
-    // Reactive state from repository
     val usersStateMap = remember { UserRepository.users }
     val activeUserId by remember { UserRepository.activeUser }
     val emulatorState by remember { RPCSX.state }
 
-    // Stable list snapshot when the map changes
     val usersList by remember {
-        derivedStateOf {
-            usersStateMap.values.sortedBy { it.userId }
-        }
+        derivedStateOf { usersStateMap.values.sortedBy { it.userId } }
     }
 
-    // Simple guard to avoid double switching
     val isSwitchingUser = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -140,9 +134,7 @@ fun UsersScreen(
                                         RPCSX.updateState()
                                         performSwitch()
                                     },
-                                    onDismiss = {
-                                        isSwitchingUser.value = false
-                                    }
+                                    onDismiss = { isSwitchingUser.value = false }
                                 )
                             } else {
                                 performSwitch()
@@ -151,7 +143,6 @@ fun UsersScreen(
                     )
                 }
 
-                // Spacer so the last item isn't blocked by nav bar
                 item {
                     Box(
                         Modifier.height(
