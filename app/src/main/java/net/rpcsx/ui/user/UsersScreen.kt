@@ -74,16 +74,19 @@ private fun UserRow(
 fun UsersScreen(
     navigateBack: () -> Unit
 ) {
+    // Reactive state from repository
     val usersStateMap = remember { UserRepository.users }
     val activeUserId by remember { UserRepository.activeUser }
     val emulatorState by remember { RPCSX.state }
 
+    // Stable list snapshot when the map changes
     val usersList by remember {
         derivedStateOf {
             usersStateMap.values.sortedBy { it.userId }
         }
     }
 
+    // Simple guard to avoid double switching
     val isSwitchingUser = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -148,6 +151,7 @@ fun UsersScreen(
                     )
                 }
 
+                // Spacer so the last item isn't blocked by nav bar
                 item {
                     Box(
                         Modifier.height(
