@@ -4,11 +4,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -72,21 +74,16 @@ private fun UserRow(
 fun UsersScreen(
     navigateBack: () -> Unit
 ) {
-    // Reactive state from repository
     val usersStateMap = remember { UserRepository.users }
     val activeUserId by remember { UserRepository.activeUser }
     val emulatorState by remember { RPCSX.state }
 
-    // Build a stable list snapshot only when map changes
     val usersList by remember {
         derivedStateOf {
-            // Sort by numeric userId for stable visual order if needed
-            usersStateMap.values
-                .sortedBy { it.userId }
+            usersStateMap.values.sortedBy { it.userId }
         }
     }
 
-    // Guard to prevent double taps while switching users
     val isSwitchingUser = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -110,13 +107,12 @@ fun UsersScreen(
         }
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
-
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
             ) {
                 items(
                     items = usersList,
-                    key = { it.userId } // stable key
+                    key = { it.userId }
                 ) { user ->
                     val isActive = user.userId == activeUserId
 
@@ -152,7 +148,6 @@ fun UsersScreen(
                     )
                 }
 
-                // Spacer so the last item isn't blocked by nav bar
                 item {
                     Box(
                         Modifier.height(
