@@ -6,21 +6,16 @@ on:
       releaseTag:
         description: Release tag type
         type: choice
-        options:
-          - Draft
-          - RC
-          - Release
+        options: [Draft, RC, Release]
         default: Draft
       releaseTagVersion:
         description: Release tag version
         type: number
         default: 0
   push:
-    branches:
-      - master
+    branches: [master]
   pull_request:
-    branches:
-      - master
+    branches: [master]
 
 jobs:
   build:
