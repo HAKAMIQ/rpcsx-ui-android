@@ -1,17 +1,27 @@
-
 package net.rpcsx
 
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.foundation.isSystemInDarkTheme
 import android.app.Activity
-import androidx.compose.runtime.*
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowInsetsControllerCompat
 
-object colors {
+// Fallback palette (used on Android < 12 or when dynamic color is disabled)
+private object Palette {
+    // Light
     val primaryLight = Color(0xFF4D5C92)
     val onPrimaryLight = Color(0xFFFFFFFF)
     val primaryContainerLight = Color(0xFFDCE1FF)
@@ -48,6 +58,7 @@ object colors {
     val surfaceContainerHighLight = Color(0xFFE9E7EF)
     val surfaceContainerHighestLight = Color(0xFFE3E1E9)
 
+    // Dark
     val primaryDark = Color(0xFFB6C4FF)
     val onPrimaryDark = Color(0xFF1D2D61)
     val primaryContainerDark = Color(0xFF354479)
@@ -85,107 +96,142 @@ object colors {
     val surfaceContainerHighestDark = Color(0xFF34343A)
 }
 
-private val lightScheme = lightColorScheme(
-    primary = colors.primaryLight,
-    onPrimary = colors.onPrimaryLight,
-    primaryContainer = colors.primaryContainerLight,
-    onPrimaryContainer = colors.onPrimaryContainerLight,
-    secondary = colors.secondaryLight,
-    onSecondary = colors.onSecondaryLight,
-    secondaryContainer = colors.secondaryContainerLight,
-    onSecondaryContainer = colors.onSecondaryContainerLight,
-    tertiary = colors.tertiaryLight,
-    onTertiary = colors.onTertiaryLight,
-    tertiaryContainer = colors.tertiaryContainerLight,
-    onTertiaryContainer = colors.onTertiaryContainerLight,
-    error = colors.errorLight,
-    onError = colors.onErrorLight,
-    errorContainer = colors.errorContainerLight,
-    onErrorContainer = colors.onErrorContainerLight,
-    background = colors.backgroundLight,
-    onBackground = colors.onBackgroundLight,
-    surface = colors.surfaceLight,
-    onSurface = colors.onSurfaceLight,
-    surfaceVariant = colors.surfaceVariantLight,
-    onSurfaceVariant = colors.onSurfaceVariantLight,
-    outline = colors.outlineLight,
-    outlineVariant = colors.outlineVariantLight,
-    scrim = colors.scrimLight,
-    inverseSurface = colors.inverseSurfaceLight,
-    inverseOnSurface = colors.inverseOnSurfaceLight,
-    inversePrimary = colors.inversePrimaryLight,
-    surfaceDim = colors.surfaceDimLight,
-    surfaceBright = colors.surfaceBrightLight,
-    surfaceContainerLowest = colors.surfaceContainerLowestLight,
-    surfaceContainerLow = colors.surfaceContainerLowLight,
-    surfaceContainer = colors.surfaceContainerLight,
-    surfaceContainerHigh = colors.surfaceContainerHighLight,
-    surfaceContainerHighest = colors.surfaceContainerHighestLight,
+private val LightSchemeFallback = lightColorScheme(
+    primary = Palette.primaryLight,
+    onPrimary = Palette.onPrimaryLight,
+    primaryContainer = Palette.primaryContainerLight,
+    onPrimaryContainer = Palette.onPrimaryContainerLight,
+    secondary = Palette.secondaryLight,
+    onSecondary = Palette.onSecondaryLight,
+    secondaryContainer = Palette.secondaryContainerLight,
+    onSecondaryContainer = Palette.onSecondaryContainerLight,
+    tertiary = Palette.tertiaryLight,
+    onTertiary = Palette.onTertiaryLight,
+    tertiaryContainer = Palette.tertiaryContainerLight,
+    onTertiaryContainer = Palette.onTertiaryContainerLight,
+    error = Palette.errorLight,
+    onError = Palette.onErrorLight,
+    errorContainer = Palette.errorContainerLight,
+    onErrorContainer = Palette.onErrorContainerLight,
+    background = Palette.backgroundLight,
+    onBackground = Palette.onBackgroundLight,
+    surface = Palette.surfaceLight,
+    onSurface = Palette.onSurfaceLight,
+    surfaceVariant = Palette.surfaceVariantLight,
+    onSurfaceVariant = Palette.onSurfaceVariantLight,
+    outline = Palette.outlineLight,
+    outlineVariant = Palette.outlineVariantLight,
+    scrim = Palette.scrimLight,
+    inverseSurface = Palette.inverseSurfaceLight,
+    inverseOnSurface = Palette.inverseOnSurfaceLight,
+    inversePrimary = Palette.inversePrimaryLight,
+    surfaceDim = Palette.surfaceDimLight,
+    surfaceBright = Palette.surfaceBrightLight,
+    surfaceContainerLowest = Palette.surfaceContainerLowestLight,
+    surfaceContainerLow = Palette.surfaceContainerLowLight,
+    surfaceContainer = Palette.surfaceContainerLight,
+    surfaceContainerHigh = Palette.surfaceContainerHighLight,
+    surfaceContainerHighest = Palette.surfaceContainerHighestLight,
 )
 
-private val darkScheme = darkColorScheme(
-    primary = colors.primaryDark,
-    onPrimary = colors.onPrimaryDark,
-    primaryContainer = colors.primaryContainerDark,
-    onPrimaryContainer = colors.onPrimaryContainerDark,
-    secondary = colors.secondaryDark,
-    onSecondary = colors.onSecondaryDark,
-    secondaryContainer = colors.secondaryContainerDark,
-    onSecondaryContainer = colors.onSecondaryContainerDark,
-    tertiary = colors.tertiaryDark,
-    onTertiary = colors.onTertiaryDark,
-    tertiaryContainer = colors.tertiaryContainerDark,
-    onTertiaryContainer = colors.onTertiaryContainerDark,
-    error = colors.errorDark,
-    onError = colors.onErrorDark,
-    errorContainer = colors.errorContainerDark,
-    onErrorContainer = colors.onErrorContainerDark,
-    background = colors.backgroundDark,
-    onBackground = colors.onBackgroundDark,
-    surface = colors.surfaceDark,
-    onSurface = colors.onSurfaceDark,
-    surfaceVariant = colors.surfaceVariantDark,
-    onSurfaceVariant = colors.onSurfaceVariantDark,
-    outline = colors.outlineDark,
-    outlineVariant = colors.outlineVariantDark,
-    scrim = colors.scrimDark,
-    inverseSurface = colors.inverseSurfaceDark,
-    inverseOnSurface = colors.inverseOnSurfaceDark,
-    inversePrimary = colors.inversePrimaryDark,
-    surfaceDim = colors.surfaceDimDark,
-    surfaceBright = colors.surfaceBrightDark,
-    surfaceContainerLowest = colors.surfaceContainerLowestDark,
-    surfaceContainerLow = colors.surfaceContainerLowDark,
-    surfaceContainer = colors.surfaceContainerDark,
-    surfaceContainerHigh = colors.surfaceContainerHighDark,
-    surfaceContainerHighest = colors.surfaceContainerHighestDark,
+private val DarkSchemeFallback = darkColorScheme(
+    primary = Palette.primaryDark,
+    onPrimary = Palette.onPrimaryDark,
+    primaryContainer = Palette.primaryContainerDark,
+    onPrimaryContainer = Palette.onPrimaryContainerDark,
+    secondary = Palette.secondaryDark,
+    onSecondary = Palette.onSecondaryDark,
+    secondaryContainer = Palette.secondaryContainerDark,
+    onSecondaryContainer = Palette.onSecondaryContainerDark,
+    tertiary = Palette.tertiaryDark,
+    onTertiary = Palette.onTertiaryDark,
+    tertiaryContainer = Palette.tertiaryContainerDark,
+    onTertiaryContainer = Palette.onTertiaryContainerDark,
+    error = Palette.errorDark,
+    onError = Palette.onErrorDark,
+    errorContainer = Palette.errorContainerDark,
+    onErrorContainer = Palette.onErrorContainerDark,
+    background = Palette.backgroundDark,
+    onBackground = Palette.onBackgroundDark,
+    surface = Palette.surfaceDark,
+    onSurface = Palette.onSurfaceDark,
+    surfaceVariant = Palette.surfaceVariantDark,
+    onSurfaceVariant = Palette.onSurfaceVariantDark,
+    outline = Palette.outlineDark,
+    outlineVariant = Palette.outlineVariantDark,
+    scrim = Palette.scrimDark,
+    inverseSurface = Palette.inverseSurfaceDark,
+    inverseOnSurface = Palette.inverseOnSurfaceDark,
+    inversePrimary = Palette.inversePrimaryDark,
+    surfaceDim = Palette.surfaceDimDark,
+    surfaceBright = Palette.surfaceBrightDark,
+    surfaceContainerLowest = Palette.surfaceContainerLowestDark,
+    surfaceContainerLow = Palette.surfaceContainerLowDark,
+    surfaceContainer = Palette.surfaceContainerDark,
+    surfaceContainerHigh = Palette.surfaceContainerHighDark,
+    surfaceContainerHighest = Palette.surfaceContainerHighestDark,
 )
+
+// Unified shapes & typography
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8),
+    small = RoundedCornerShape(12),
+    medium = RoundedCornerShape(16),
+    large = RoundedCornerShape(20),
+    extraLarge = RoundedCornerShape(28),
+)
+
+private val AppTypography = Typography()
 
 @Composable
 fun RPCSXTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    useDynamicColor: Boolean = true,  // Dynamic color only on Android 12+
+    amoledBlack: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    // TODO(Ishan09811): Implement dynamic colors option whenever settings gets implemented
-    val colors = if (darkTheme) darkScheme else lightScheme
+    val scheme: ColorScheme = when {
+        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val ctx = LocalView.current.context
+            if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        }
+        else -> if (darkTheme) DarkSchemeFallback else LightSchemeFallback
+    }.let { base ->
+        if (darkTheme && amoledBlack) {
+            base.copy(
+                background = Color.Black,
+                surface = Color.Black,
+                surfaceDim = Color.Black,
+                surfaceBright = Color(0xFF121212),
+                surfaceContainerLowest = Color.Black,
+                surfaceContainerLow = Color(0xFF0A0A0A),
+                surfaceContainer = Color(0xFF0E0E0E),
+                surfaceContainerHigh = Color(0xFF141414),
+                surfaceContainerHighest = Color(0xFF181818)
+            )
+        } else base
+    }
 
+    // System bars (Android 10+ safe)
     val view = LocalView.current
     val activity = view.context as? Activity
-
     SideEffect {
-        activity?.window?.apply {
-            statusBarColor = android.graphics.Color.TRANSPARENT
-            navigationBarColor = android.graphics.Color.TRANSPARENT
-            isNavigationBarContrastEnforced = false
-            val insetsController = WindowInsetsControllerCompat(this, decorView)
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
-            insetsController.isAppearanceLightStatusBars = !darkTheme
+        activity?.window?.let { w ->
+            w.statusBarColor = Color.Transparent.toArgb()
+            w.navigationBarColor = Color.Transparent.toArgb()
+            w.isNavigationBarContrastEnforced = false
+            WindowInsetsControllerCompat(w, w.decorView).apply {
+                val light = !darkTheme
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
         }
     }
 
     MaterialTheme(
-        colorScheme = colors,
-        typography = Typography(),
+        colorScheme = scheme,
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }
