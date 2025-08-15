@@ -20,30 +20,22 @@ data class User(
 )
 
 /**
- * Normalizes a username:
+ * Normalize a username:
  * - keep only [A-Za-z0-9_]
  * - trim to max 16 chars
  * - ensure length in [3..16], otherwise return fallback
  */
 private fun normalizeUsername(raw: String, fallback: String): String {
-    val cleaned = raw
-        .filter { it.isLetterOrDigit() || it == '_' }
-        .take(16)
-
+    val cleaned = raw.filter { it.isLetterOrDigit() || it == '_' }.take(16)
     return if (cleaned.length in 3..16) cleaned else fallback.take(16)
 }
 
-/**
- * Safely reads file content as text. Returns null on any error.
- */
+/** Safely read file text; returns null on any error. */
 private fun readTextOrNull(file: File): String? = runCatching {
     if (file.isFile) file.readText(Charsets.UTF_8).trim() else null
 }.getOrNull()
 
-/**
- * Build a User model from a userId by reading local files.
- * Never throws; always returns a valid username with fallback.
- */
+/** Build a User from disk with safe fallback username. */
 private fun toUser(userId: String): User {
     val userDir = File(RPCSX.getHdd0Dir()).resolve("home").resolve(userId)
     val fallback = "User$userId"
@@ -58,7 +50,7 @@ class UserRepository private constructor() {
     private val _users = mutableStateMapOf<Int, User>()
     private val _activeUser = mutableStateOf("")
 
-    // Single lightweight scope for background I/O (prevents CPU heat by avoiding busy loops)
+    // Single scope for background IO
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ioMutex = Mutex()
 
@@ -69,27 +61,30 @@ class UserRepository private constructor() {
         val activeUser get() = instance._activeUser
 
         /**
-         * Public entry to load/refresh users list and active user.
-         * Safe to call from UI (does I/O off the main thread).
+         * Loads/refreshes users and resolves the active user.
+         * Can be called from UI; IO is off the main thread.
          */
         fun load() {
             instance.repoScope.launch {
                 instance.refreshUsersList()
+
                 val fromSettings = getUserFromSettings()
                 val fromEmu = runCatching { RPCSX.instance.getUser() }.getOrNull()
-                val resolved = fromEmu?.takeIf { it.isValidUserId() } ?: fromSettings
+                var resolved = fromEmu?.takeIf { it.isValidUserId() } ?: fromSettings
+
+                // If resolved doesn't exist on disk, fall back to first available or default.
+                if (!users.containsKey(resolved.asUserKeyOrZero())) {
+                    resolved = users.keys.minOrNull()?.let { "%08d".format(it) } ?: "00000001"
+                }
 
                 withContext(Dispatchers.Main) {
-                    if (activeUser.value != resolved) {
-                        activeUser.value = resolved
-                    }
+                    if (activeUser.value != resolved) activeUser.value = resolved
                 }
             }
         }
 
-        fun getUsername(userId: String): String? {
-            return users.values.firstOrNull { it.userId == userId }?.username
-        }
+        fun getUsername(userId: String): String? =
+            users.values.firstOrNull { it.userId == userId }?.username
 
         fun getUserFromSettings(): String {
             val stored = GeneralSettings["active_user"] as? String
@@ -100,7 +95,6 @@ class UserRepository private constructor() {
             instance.repoScope.launch {
                 val nextId = instance.findNextFreeUserId() ?: return@launch
                 if (!validateUsername(username)) return@launch
-
                 instance.generateUser(nextId, username)
                 instance.refreshUsersList()
             }
@@ -109,12 +103,9 @@ class UserRepository private constructor() {
         fun removeUser(userId: String) {
             if (activeUser.value == userId) return
             if (!userId.isValidUserId()) return
-
             instance.repoScope.launch {
-                val toRemoveKey = userId.toInt()
-                users[toRemoveKey]?.let {
-                    File(it.userDir).deleteRecursively()
-                }
+                val key = userId.toInt()
+                users[key]?.let { File(it.userDir).deleteRecursively() }
                 instance.refreshUsersList()
             }
         }
@@ -122,13 +113,9 @@ class UserRepository private constructor() {
         fun renameUser(userId: String, username: String) {
             if (!userId.isValidUserId()) return
             if (!validateUsername(username)) return
-
             instance.repoScope.launch {
                 val usernameFile = File(RPCSX.getHdd0Dir())
-                    .resolve("home")
-                    .resolve(userId)
-                    .resolve("localusername")
-
+                    .resolve("home").resolve(userId).resolve("localusername")
                 runCatching { usernameFile.writeText(username, Charsets.UTF_8) }
                 instance.refreshUsersList()
             }
@@ -138,23 +125,17 @@ class UserRepository private constructor() {
             if (!userId.isValidUserId()) return
             instance.repoScope.launch {
                 runCatching { RPCSX.instance.loginUser(userId) }
-                withContext(Dispatchers.Main) {
-                    activeUser.value = userId
-                }
+                withContext(Dispatchers.Main) { activeUser.value = userId }
                 GeneralSettings.setValue("active_user", userId)
                 GameRepository.queueRefresh()
             }
         }
 
-        fun validateUsername(text: String): Boolean {
-            return text.matches(Regex("^[A-Za-z0-9_]{3,16}$"))
-        }
+        fun validateUsername(text: String): Boolean =
+            text.matches(Regex("^[A-Za-z0-9_]{3,16}$"))
     }
 
-    /**
-     * Refreshes the in-memory users map by scanning the file system.
-     * Protected by a mutex to avoid concurrent scans.
-     */
+    /** Refresh in-memory users by scanning disk (serialized by mutex). */
     private suspend fun refreshUsersList() {
         ioMutex.withLock {
             val fresh = getUserAccounts()
@@ -165,12 +146,8 @@ class UserRepository private constructor() {
         }
     }
 
-    /**
-     * Returns the next free 8-digit user id as a zero-padded string, or null if exhausted.
-     * This is O(n) over current users but only runs on demand and off the main thread.
-     */
+    /** Next free 8-digit user id as zero-padded string, or null if exhausted. */
     private fun findNextFreeUserId(): String? {
-        // Collect existing integer keys, find the smallest missing starting from 1
         val taken = _users.keys.toSortedSet()
         var candidate = 1
         for (k in taken) {
@@ -180,32 +157,23 @@ class UserRepository private constructor() {
         return "%08d".format(candidate)
     }
 
-    /**
-     * Generates the directory structure for a new user.
-     */
+    /** Create minimal user directory structure and persist username. */
     private fun generateUser(userId: String, userName: String) {
         require(userId.isValidUserId())
         val homeDir = File(RPCSX.getHdd0Dir()).resolve("home")
         val userDir = homeDir.resolve(userId)
-
-        // Create minimal tree required
         homeDir.mkdirs()
         userDir.mkdirs()
         userDir.resolve("exdata").mkdirs()
         userDir.resolve("savedata").mkdirs()
         userDir.resolve("trophy").mkdirs()
-
-        // Persist username
         userDir.resolve("localusername").writeText(userName, Charsets.UTF_8)
     }
 
-    /**
-     * Scans existing user accounts from disk.
-     */
+    /** Scan existing user accounts from disk. */
     private fun getUserAccounts(): HashMap<Int, User> {
         val userList = HashMap<Int, User>()
         val home = File(RPCSX.getHdd0Dir()).resolve("home")
-
         val dirs = home.listFiles() ?: return userList
         for (dir in dirs) {
             if (!dir.isDirectory) continue
