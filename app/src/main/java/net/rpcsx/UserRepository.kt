@@ -3,11 +3,9 @@ package net.rpcsx
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.text.isDigitsOnly
-import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import net.rpcsx.utils.GeneralSettings
 import java.io.File
+import kotlin.concurrent.thread
 
 data class User(
     val userId: String,
@@ -15,142 +13,149 @@ data class User(
     val username: String
 )
 
-object UserValidator {
-    private val usernameRegex = Regex("^[A-Za-z0-9_]{3,16}$")
-
-    fun isValidUserId(id: String) = id.length == 8 && id.isDigitsOnly()
-    fun asUserKeyOrZero(id: String) = if (isValidUserId(id)) id.toIntOrNull() ?: 0 else 0
-    fun validateUsername(username: String) = usernameRegex.matches(username)
-
-    fun normalizeUsername(raw: String, fallback: String): String {
-        val cleaned = raw.filter { it.isLetterOrDigit() || it == '_' }.take(16)
-        return if (validateUsername(cleaned)) cleaned else fallback.take(16)
-    }
-}
-
-private fun readTextOrNull(file: File): String? = runCatching {
-    if (file.isFile) file.readText(Charsets.UTF_8).trim() else null
-}.getOrNull()
-
 private fun toUser(userId: String): User {
-    val userDir = File(RPCSX.getHdd0Dir(), "home/$userId")
-    val fallback = "User$userId"
-    val name = readTextOrNull(File(userDir, "localusername")) ?: fallback
-    return User(userId, userDir.path, UserValidator.normalizeUsername(name, fallback))
+    val userDir = File(RPCSX.getHdd0Dir()).resolve("home").resolve(userId)
+
+    var userName = userDir.resolve("localusername").readText()
+
+    if (userName.length > 16) {
+        userName = userName.substring(0, 16)
+    }
+
+    return User(userId, userDir.path, userName)
 }
 
-class UserRepository private constructor() {
-    private val _users = mutableStateMapOf<Int, User>()
-    private val _activeUser = mutableStateOf("")
-    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val ioMutex = Mutex()
+class UserRepository {
+    private val users = mutableStateMapOf<Int, User>()
+    private var activeUser = mutableStateOf("")
 
     companion object {
         private val instance = UserRepository()
-        val users get() = instance._users
-        val activeUser get() = instance._activeUser
+
+        val users = instance.users
+        val activeUser = instance.activeUser
+
+        fun getUsername(userId: String): String? {
+            return users.values.firstOrNull { it.userId == userId }?.username
+        }
 
         fun load() {
-            instance.repoScope.launch {
-                instance.refreshUsersList()
-
-                val fromSettings = getUserFromSettings()
-                val fromEmu = runCatching { RPCSX.instance.getUser() }.getOrNull()
-                var resolved = fromEmu?.takeIf(UserValidator::isValidUserId) ?: fromSettings
-
-                if (!users.containsKey(UserValidator.asUserKeyOrZero(resolved))) {
-                    resolved = users.keys.minOrNull()?.let { "%08d".format(it) } ?: "00000001"
-                }
-
-                withContext(Dispatchers.Main) {
-                    if (activeUser.value != resolved) activeUser.value = resolved
-                }
+            updateList()
+            instance.activeUser.value = getUserFromSettings()
+            if (instance.activeUser.value != RPCSX.instance.getUser()) {
+                instance.activeUser.value = RPCSX.instance.getUser()
             }
         }
 
-        fun getUsername(userId: String) =
-            users.values.firstOrNull { it.userId == userId }?.username
-
         fun getUserFromSettings(): String {
-            val stored = GeneralSettings["active_user"] as? String
-            return if (UserValidator.isValidUserId(stored ?: "")) stored!! else "00000001"
+            return GeneralSettings["active_user"] as? String ?: "00000001"
+        }
+
+        private fun updateList() {
+            users.clear()
+            users.putAll(getUserAccounts())
+        }
+
+        private fun checkUser(directory: String): Int {
+            return if (directory.isDigitsOnly() && directory.length == 8) {
+                directory.toInt()
+            } else {
+                0
+            }
+        }
+
+        private fun generateUser(userId: String, userName: String) {
+            assert(checkUser(userId) > 0)
+
+            val homeDir = RPCSX.getHdd0Dir() + "home/"
+            val userDir = homeDir + userId
+            File(homeDir).mkdir()
+            File(userDir).mkdir()
+            File(userDir, "exdata").mkdir()
+            File(userDir, "savedata").mkdir()
+            File(userDir, "trophy").mkdir()
+            File(userDir, "localusername").writeText(userName)
         }
 
         fun createUser(username: String) {
-            if (!UserValidator.validateUsername(username)) return
-            instance.repoScope.launch {
-                val nextId = instance.findNextFreeUserId() ?: return@launch
-                instance.generateUser(nextId, username)
-                instance.refreshUsersList()
+            var smallest = 1
+
+            for (user in instance.users) {
+                if (user.key > smallest) break
+                smallest++
             }
+
+            if (smallest >= 100000000) {
+                return
+            }
+
+            val nextUserId = "%08d".format(smallest)
+            assert(checkUser(nextUserId) > 0)
+
+            if (!validateUsername(username)) {
+                return
+            }
+
+            generateUser(nextUserId, username)
+            updateList()
         }
 
         fun removeUser(userId: String) {
-            if (!UserValidator.isValidUserId(userId) || activeUser.value == userId) return
-            instance.repoScope.launch {
-                val key = userId.toInt()
-                users[key]?.let { File(it.userDir).deleteRecursively() }
-                instance.refreshUsersList()
+            if (instance.activeUser.value == userId) return
+
+            val key = checkUser(userId)
+
+            if (key == 0) return
+
+            instance.users[key]?.also {
+                File(it.userDir).deleteRecursively()
             }
+
+            updateList()
         }
 
         fun renameUser(userId: String, username: String) {
-            if (!UserValidator.isValidUserId(userId) || !UserValidator.validateUsername(username)) return
-            instance.repoScope.launch {
-                runCatching {
-                    File(RPCSX.getHdd0Dir(), "home/$userId/localusername")
-                        .writeText(username, Charsets.UTF_8)
-                }
-                instance.refreshUsersList()
+            val key = checkUser(userId)
+            if (key == 0) return
+
+            val usernameFile = File(RPCSX.getHdd0Dir()).resolve("home").resolve(userId).resolve("localusername")
+            if (!validateUsername(username)) {
+                return
             }
+
+            usernameFile.writeText(username)
+            updateList()
         }
 
         fun loginUser(userId: String) {
-            if (!UserValidator.isValidUserId(userId)) return
-            instance.repoScope.launch {
-                runCatching { RPCSX.instance.loginUser(userId) }
-                withContext(Dispatchers.Main) { activeUser.value = userId }
-                GeneralSettings.setValue("active_user", userId)
-                GameRepository.queueRefresh()
+            RPCSX.instance.loginUser(userId)
+            instance.activeUser.value = userId
+            GeneralSettings.setValue("active_user", userId)
+            GameRepository.queueRefresh()
+        }
+
+        fun validateUsername(textToValidate: String): Boolean {
+            return textToValidate.matches(Regex("^[A-Za-z0-9]{3,16}$"))
+        }
+
+        private fun getUserAccounts(): HashMap<Int, User> {
+            val userList: HashMap<Int, User> = hashMapOf()
+
+            File(RPCSX.getHdd0Dir()).resolve("home").listFiles()?.let {
+                for (userDir in it) {
+                    if (!userDir.isDirectory) continue
+
+                    val key = checkUser(userDir.name)
+
+                    if (key == 0) continue
+
+                    if (!userDir.resolve("localusername").isFile) continue
+
+                    userList[key] = toUser(userDir.name)
+                }
             }
-        }
-    }
 
-    private suspend fun refreshUsersList() {
-        ioMutex.withLock {
-            val fresh = getUserAccounts()
-            withContext(Dispatchers.Main) {
-                _users.clear()
-                _users.putAll(fresh)
-            }
+            return userList
         }
-    }
-
-    private fun findNextFreeUserId(): String? {
-        val taken = _users.keys.toSortedSet()
-        var candidate = 1
-        for (k in taken) {
-            if (k == candidate) candidate++ else if (k > candidate) break
-        }
-        return if (candidate < 100_000_000) "%08d".format(candidate) else null
-    }
-
-    private fun generateUser(userId: String, userName: String) {
-        require(UserValidator.isValidUserId(userId))
-        val userDir = File(RPCSX.getHdd0Dir(), "home/$userId").apply { mkdirs() }
-        listOf("exdata", "savedata", "trophy").forEach { File(userDir, it).mkdirs() }
-        File(userDir, "localusername").writeText(userName, Charsets.UTF_8)
-    }
-
-    private fun getUserAccounts(): HashMap<Int, User> {
-        val userList = HashMap<Int, User>()
-        val dirs = File(RPCSX.getHdd0Dir(), "home").listFiles() ?: return userList
-        for (dir in dirs) {
-            if (!dir.isDirectory) continue
-            val key = UserValidator.asUserKeyOrZero(dir.name)
-            if (key == 0) continue
-            userList[key] = toUser(dir.name)
-        }
-        return userList
     }
 }
